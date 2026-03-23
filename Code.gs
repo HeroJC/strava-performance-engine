@@ -11,8 +11,61 @@ function onOpen() {
       .addItem('3. Complete Authorization', 'completeAuth')
       .addSeparator()
       .addItem('Sync Strava Data', 'syncStravaData')
+      .addItem('Copy Gemini Digest', 'showGeminiDigest')
       .addItem('Clear Credentials', 'clearCredentials')
       .addToUi();
+}
+
+function showGeminiDigest() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const summarySheet = ss.getSheetByName('Summary_Data');
+  const segmentSheet = ss.getSheetByName('Segment_Data');
+  const ui = SpreadsheetApp.getUi();
+
+  if (!summarySheet || summarySheet.getLastRow() < 2) {
+    ui.alert('No data found. Please run "Sync Strava Data" first.');
+    return;
+  }
+
+  const summaryData = summarySheet.getRange(2, 1, Math.min(5, summarySheet.getLastRow() - 1), 11).getValues();
+  
+  let digest = "## 🏃‍♂️ Strava Performance Digest (Last 5 Skates)\n\n";
+  
+  summaryData.forEach(row => {
+    digest += `### ${row[0]}: ${row[2]}\n`;
+    digest += `- **Stats:** ${row[3]} mi @ ${row[4]} Avg MPH (Max: ${row[5]} MPH)\n`;
+    digest += `- **Conditions:** ${row[8]}°F, Wind ${row[9]} MPH at ${row[10]}°\n`;
+    digest += `- **Effort:** Suffer Score ${row[6]}, Predicted Marathon: ${row[7]}\n\n`;
+  });
+
+  if (segmentSheet && segmentSheet.getLastRow() > 1) {
+    const segmentData = segmentSheet.getRange(2, 1, Math.min(10, segmentSheet.getLastRow() - 1), 7).getValues();
+    digest += "## 📈 Recent Segment Highlights\n";
+    segmentData.slice(0, 5).forEach(seg => {
+      digest += `- **${seg[1]}**: ${seg[2]} MPH (${seg[4]} Velocity Maint.)\n`;
+    });
+  }
+
+  digest += "\n---\n*Copy and paste this into Gemini for a deep-dive analysis.*";
+
+  const htmlOutput = HtmlService
+    .createHtmlOutput(`<div style="font-family: Arial, sans-serif;">
+                       <textarea id="digestText" style="width: 100%; height: 250px; font-family: monospace; font-size: 12px; padding: 10px;">${digest}</textarea>
+                       <p>Copy the text above and paste it into your conversation with Gemini.</p>
+                       <button onclick="copyToClipboard()" style="background-color: #fc4c02; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer;">Copy to Clipboard</button>
+                       <script>
+                         function copyToClipboard() {
+                           var copyText = document.getElementById("digestText");
+                           copyText.select();
+                           document.execCommand("copy");
+                           google.script.host.close();
+                         }
+                       </script>
+                       </div>`)
+    .setWidth(500)
+    .setHeight(400);
+    
+  ui.showModalDialog(htmlOutput, 'Gemini Performance Digest');
 }
 
 function setupCredentials() {
