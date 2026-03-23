@@ -152,7 +152,7 @@ function syncStravaData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const settings = getSettings(ss);
   
-  const summaryHeaders = ['Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Avg MPH', 'Max MPH', 'Suffer Score', 'Predicted Race Time', 'Map Polyline'];
+  const summaryHeaders = ['Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Avg MPH', 'Max MPH', 'Suffer Score', 'Predicted Race Time', 'Temp (°F)', 'Wind (MPH)', 'Wind Dir (°)', 'Map Polyline'];
   const segmentHeaders = [
     'Date', 'Segment Name', 'Avg MPH', 'Avg HR', 
     'Velocity Maintenance %', 'Target Gap Ratio', 'Aerobic Power (S/HR)', 'Segment ID'
@@ -205,8 +205,11 @@ function syncStravaData() {
       }).getContentText());
 
       let neighborhood = "NYC Area";
+      let weather = { temp: "N/A", windSpeed: "N/A", windDir: "N/A" };
+      
       if (detail.start_latlng) {
         neighborhood = fetchFreeNeighborhood(detail.start_latlng[0], detail.start_latlng[1]);
+        weather = fetchWeatherData(detail.start_latlng[0], detail.start_latlng[1], detail.start_date_local);
         Utilities.sleep(1000); // Respect OSM rate limits
       }
 
@@ -227,6 +230,9 @@ function syncStravaData() {
         (detail.max_speed * 2.23694).toFixed(1),
         detail.suffer_score || 0,
         predictedTime,
+        weather.temp,
+        weather.windSpeed,
+        weather.windDir,
         detail.map ? detail.map.summary_polyline : "N/A"
       ]);
 
@@ -263,6 +269,25 @@ function syncStravaData() {
   } catch (e) {
     SpreadsheetApp.getUi().alert('Sync Error', 'An error occurred during sync: ' + e.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
   }
+}
+
+function fetchWeatherData(lat, lng, startDateLocal) {
+  try {
+    const dateStr = startDateLocal.split('T')[0];
+    const hour = parseInt(startDateLocal.split('T')[1].split(':')[0], 10);
+
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&start_date=${dateStr}&end_date=${dateStr}&hourly=temperature_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit&wind_speed_unit=mph`;
+    
+    const response = JSON.parse(UrlFetchApp.fetch(url).getContentText());
+    if (response && response.hourly) {
+      return {
+        temp: response.hourly.temperature_2m[hour],
+        windSpeed: response.hourly.wind_speed_10m[hour],
+        windDir: response.hourly.wind_direction_10m[hour]
+      };
+    }
+  } catch (e) {}
+  return { temp: "N/A", windSpeed: "N/A", windDir: "N/A" };
 }
 
 function fetchFreeNeighborhood(lat, lng) {
