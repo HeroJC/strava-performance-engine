@@ -291,20 +291,24 @@ function syncStravaData() {
 
       if (detail.segment_efforts) {
         detail.segment_efforts.forEach(effort => {
-          const mph = (effort.average_speed * 2.23694);
+          // Calculate MPH with fallback if average_speed is missing
+          let speedMS = effort.average_speed;
+          if ((!speedMS || isNaN(speedMS)) && effort.distance && effort.moving_time) {
+            speedMS = effort.distance / effort.moving_time;
+          }
           
+          const mph = speedMS ? (speedMS * 2.23694) : 0;
           const hr = (effort.average_heartrate && !isNaN(effort.average_heartrate)) ? effort.average_heartrate : 0;
           
-          const velocityMaintenance = ((mph / settings.targetSpeed) * 100).toFixed(1);
-          const targetGap = (mph / settings.targetSpeed).toFixed(2);
-          
-          const aerobicPower = hr > 0 ? (mph / hr).toFixed(3) : "N/A";
+          const velocityMaintenance = (mph > 0 && settings.targetSpeed > 0) ? ((mph / settings.targetSpeed) * 100).toFixed(1) : "0.0";
+          const targetGap = (mph > 0 && settings.targetSpeed > 0) ? (mph / settings.targetSpeed).toFixed(2) : "0.00";
+          const aerobicPower = (mph > 0 && hr > 0) ? (mph / hr).toFixed(3) : "N/A";
 
           segmentSheet.appendRow([
             new Date(detail.start_date_local).toLocaleDateString(),
             detail.name,
             effort.name,
-            mph.toFixed(2),
+            mph > 0 ? mph.toFixed(2) : "N/A",
             hr > 0 ? hr.toFixed(0) : "N/A",
             velocityMaintenance + "%",
             targetGap,
