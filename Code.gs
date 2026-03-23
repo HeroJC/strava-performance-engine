@@ -274,16 +274,18 @@ function syncStravaData() {
 }
 
 function updateDashboard(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  
   let sheet = ss.getSheetByName('Dashboard');
   if (!sheet) {
     sheet = ss.insertSheet('Dashboard', 0);
   }
   
-  const charts = sheet.getCharts();
-  charts.forEach(c => sheet.removeChart(c));
-
   const summarySheet = ss.getSheetByName('Summary_Data');
   if (!summarySheet || summarySheet.getLastRow() < 2) return;
+
+  const charts = sheet.getCharts();
+  charts.forEach(c => sheet.removeChart(c));
 
   const lastRow = summarySheet.getLastRow();
   
