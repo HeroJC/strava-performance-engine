@@ -161,10 +161,6 @@ function syncStravaData() {
   const summarySheet = checkAndCreateSheet(ss, 'Summary_Data', summaryHeaders);
   const segmentSheet = checkAndCreateSheet(ss, 'Segment_Data', segmentHeaders);
 
-  // Clear data for fresh sync
-  if (summarySheet.getLastRow() > 1) summarySheet.getRange(2, 1, summarySheet.getLastRow(), summaryHeaders.length).clearContent();
-  if (segmentSheet.getLastRow() > 1) segmentSheet.getRange(2, 1, segmentSheet.getLastRow(), segmentHeaders.length).clearContent();
-
   try {
     const tokenUrl = `https://www.strava.com/oauth/token?client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${refreshToken}&grant_type=refresh_token`;
     const tokenResponse = UrlFetchApp.fetch(tokenUrl, { method: 'post' });
@@ -177,12 +173,29 @@ function syncStravaData() {
     
     const accessToken = tokenData.access_token;
 
-    // Fetching last 15 activities
-    const activities = JSON.parse(UrlFetchApp.fetch('https://www.strava.com/api/v3/athlete/activities?per_page=15', {
+    // Incremental sync logic
+    let afterTimestamp = props.getProperty('LAST_SYNC_TIMESTAMP');
+    let activitiesUrl = 'https://www.strava.com/api/v3/athlete/activities?per_page=30';
+    if (afterTimestamp) {
+      activitiesUrl += `&after=${afterTimestamp}`;
+    }
+
+    const activities = JSON.parse(UrlFetchApp.fetch(activitiesUrl, {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     }).getContentText());
 
+    if (activities.length === 0) {
+      SpreadsheetApp.getUi().alert('Sync Complete', 'No new activities found.', SpreadsheetApp.getUi().ButtonSet.OK);
+      return;
+    }
+
+    // Strava returns newest first. Reverse to append oldest first for a chronological log.
+    activities.reverse();
+    let maxTimestamp = afterTimestamp ? parseInt(afterTimestamp) : 0;
+
     activities.forEach(activity => {
+      const activityTime = Math.floor(new Date(activity.start_date).getTime() / 1000);
+      if (activityTime > maxTimestamp) maxTimestamp = activityTime;
       if (settings.targetSport && activity.sport_type !== settings.targetSport && activity.type !== settings.targetSport) {
         return; // Skip activities that don't match the target sport
       }
@@ -241,6 +254,11 @@ function syncStravaData() {
         });
       }
     });
+
+    // Save the latest timestamp so we don't fetch these again
+    if (maxTimestamp > 0) {
+      props.setProperty('LAST_SYNC_TIMESTAMP', maxTimestamp.toString());
+    }
 
   } catch (e) {
     SpreadsheetApp.getUi().alert('Sync Error', 'An error occurred during sync: ' + e.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
