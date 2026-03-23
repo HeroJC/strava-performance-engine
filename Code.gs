@@ -207,7 +207,7 @@ function syncStravaData() {
   
   const summaryHeaders = ['Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Avg MPH', 'Max MPH', 'Suffer Score', 'Predicted Race Time', 'Temp (°F)', 'Wind (MPH)', 'Wind Dir (°)', 'Map Polyline'];
   const segmentHeaders = [
-    'Date', 'Segment Name', 'Avg MPH', 'Avg HR', 
+    'Date', 'Activity', 'Segment Name', 'Avg MPH', 'Avg HR', 
     'Velocity Maintenance %', 'Target Gap Ratio', 'Aerobic Power (S/HR)', 'Segment ID'
   ];
 
@@ -302,6 +302,7 @@ function syncStravaData() {
 
           segmentSheet.appendRow([
             new Date(detail.start_date_local).toLocaleDateString(),
+            detail.name,
             effort.name,
             mph.toFixed(2),
             hr > 0 ? hr.toFixed(0) : "N/A",
@@ -408,6 +409,13 @@ function checkAndCreateSheet(ss, name, headers) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#f3f3f3");
+    sheet.setFrozenRows(1);
+  } else {
+    // Sync headers if they have changed (e.g., after a script update)
+    const existingHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    if (existingHeaders.join(',') !== headers.join(',')) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold").setBackground("#f3f3f3");
+    }
   }
   return sheet;
 }
