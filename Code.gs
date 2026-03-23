@@ -13,6 +13,9 @@ function onOpen() {
       .addItem('Sync Strava Data', 'syncStravaData')
       .addItem('Copy Gemini Digest', 'showGeminiDigest')
       .addSeparator()
+      .addItem('Refresh Volume Rollup', 'updateVolumeRollup')
+      .addItem('Refresh PR Board', 'updatePRBoard')
+      .addSeparator()
       .addItem('Reset Sync History', 'resetSyncHistory')
       .addItem('Clear Credentials', 'clearCredentials')
       .addToUi();
@@ -332,10 +335,87 @@ function syncStravaData() {
     }
 
     updateDashboard(ss);
+    updateVolumeRollup(ss);
+    updatePRBoard(ss);
 
   } catch (e) {
     SpreadsheetApp.getUi().alert('Sync Error', 'An error occurred during sync: ' + e.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
   }
+}
+
+function updateVolumeRollup(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  const summarySheet = ss.getSheetByName('Summary_Data');
+  if (!summarySheet || summarySheet.getLastRow() < 2) return;
+
+  const data = summarySheet.getRange(2, 1, summarySheet.getLastRow() - 1, 7).getValues();
+  const monthly = {};
+  const weekly = {};
+
+  data.forEach(row => {
+    const date = new Date(row[0]);
+    if (isNaN(date)) return;
+
+    // Monthly Key: "YYYY-MM"
+    const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+    
+    // Weekly Key: "Week Starting YYYY-MM-DD" (Monday)
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
+    const monday = new Date(date.setDate(diff));
+    const weekKey = `Week Starting ${monday.getFullYear()}-${(monday.getMonth() + 1).toString().padStart(2, '0')}-${monday.getDate().toString().padStart(2, '0')}`;
+
+    const dist = parseFloat(row[3]) || 0;
+    const mph = parseFloat(row[4]) || 0;
+    const suffer = parseFloat(row[6]) || 0;
+
+    [monthly, weekly].forEach((group, i) => {
+      const key = i === 0 ? monthKey : weekKey;
+      if (!group[key]) {
+        group[key] = { dist: 0, mphSum: 0, count: 0, suffer: 0 };
+      }
+      group[key].dist += dist;
+      group[key].mphSum += (mph * dist); // Weighted by distance
+      group[key].count += 1;
+      group[key].suffer += suffer;
+    });
+  });
+
+  const rollupSheet = checkAndCreateSheet(ss, 'Volume_Rollup', ['Period', 'Total Miles', 'Avg MPH', 'Skates', 'Total Suffer']);
+  rollupSheet.clearContents();
+  rollupSheet.appendRow(['Period', 'Total Miles', 'Avg MPH', 'Skates', 'Total Suffer']);
+  rollupSheet.getRange(1, 1, 1, 5).setFontWeight("bold").setBackground("#f3f3f3");
+
+  const appendData = (group) => {
+    const sortedKeys = Object.keys(group).sort().reverse();
+    sortedKeys.forEach(key => {
+      const g = group[key];
+      rollupSheet.appendRow([
+        key,
+        g.dist.toFixed(2),
+        g.dist > 0 ? (g.mphSum / g.dist).toFixed(1) : "0.0",
+        g.count,
+        g.suffer.toFixed(0)
+      ]);
+    });
+  };
+
+  rollupSheet.appendRow(['--- MONTHLY VOLUME ---']);
+  rollupSheet.getRange(rollupSheet.getLastRow(), 1).setFontWeight("bold");
+  appendData(monthly);
+  
+  rollupSheet.appendRow(['']);
+  rollupSheet.appendRow(['--- WEEKLY VOLUME ---']);
+  rollupSheet.getRange(rollupSheet.getLastRow(), 1).setFontWeight("bold");
+  appendData(weekly);
+  
+  rollupSheet.autoResizeColumns(1, 5);
+}
+
+function updatePRBoard(ss) {
+  if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
+  // Placeholder for Phase 2
+  SpreadsheetApp.getUi().alert('Coming Soon', 'The PR Board feature is being implemented next!', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 function updateDashboard(ss) {
