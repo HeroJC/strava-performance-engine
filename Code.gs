@@ -414,8 +414,49 @@ function updateVolumeRollup(ss) {
 
 function updatePRBoard(ss) {
   if (!ss) ss = SpreadsheetApp.getActiveSpreadsheet();
-  // Placeholder for Phase 2
-  SpreadsheetApp.getUi().alert('Coming Soon', 'The PR Board feature is being implemented next!', SpreadsheetApp.getUi().ButtonSet.OK);
+  const segmentSheet = ss.getSheetByName('Segment_Data');
+  if (!segmentSheet || segmentSheet.getLastRow() < 2) return;
+
+  const data = segmentSheet.getRange(2, 1, segmentSheet.getLastRow() - 1, 9).getValues();
+  const prs = {};
+
+  data.forEach(row => {
+    const segmentName = row[2];
+    const mph = parseFloat(row[3]) || 0;
+    const date = row[0];
+    const activity = row[1];
+
+    if (!prs[segmentName]) {
+      prs[segmentName] = [];
+    }
+    
+    prs[segmentName].push({ mph, date, activity });
+  });
+
+  const prSheet = checkAndCreateSheet(ss, 'Personal_Records', ['Segment Name', 'Rank', 'Avg MPH', 'Date', 'Activity']);
+  prSheet.clearContents();
+  prSheet.appendRow(['Segment Name', 'Rank', 'Avg MPH', 'Date', 'Activity']);
+  prSheet.getRange(1, 1, 1, 5).setFontWeight("bold").setBackground("#f3f3f3");
+
+  const sortedSegments = Object.keys(prs).sort();
+  sortedSegments.forEach(seg => {
+    // Sort efforts for this segment by speed descending
+    const efforts = prs[seg].sort((a, b) => b.mph - a.mph);
+    
+    // Take top 3 PRs
+    efforts.slice(0, 3).forEach((effort, index) => {
+      prSheet.appendRow([
+        index === 0 ? seg : "", // Only show segment name on the first row for readability
+        `#${index + 1}`,
+        effort.mph.toFixed(2),
+        effort.date,
+        effort.activity
+      ]);
+    });
+    prSheet.appendRow(['']); // Spacer
+  });
+
+  prSheet.autoResizeColumns(1, 5);
 }
 
 function updateDashboard(ss) {
