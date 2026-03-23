@@ -266,9 +266,57 @@ function syncStravaData() {
       props.setProperty('LAST_SYNC_TIMESTAMP', maxTimestamp.toString());
     }
 
+    updateDashboard(ss);
+
   } catch (e) {
     SpreadsheetApp.getUi().alert('Sync Error', 'An error occurred during sync: ' + e.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
   }
+}
+
+function updateDashboard(ss) {
+  let sheet = ss.getSheetByName('Dashboard');
+  if (!sheet) {
+    sheet = ss.insertSheet('Dashboard', 0);
+  }
+  
+  const charts = sheet.getCharts();
+  charts.forEach(c => sheet.removeChart(c));
+
+  const summarySheet = ss.getSheetByName('Summary_Data');
+  if (!summarySheet || summarySheet.getLastRow() < 2) return;
+
+  const lastRow = summarySheet.getLastRow();
+  
+  const rangeDate = summarySheet.getRange(1, 1, lastRow, 1);
+  const rangeMph = summarySheet.getRange(1, 5, lastRow, 1);
+  
+  const mphChart = sheet.newChart()
+    .setChartType(Charts.ChartType.LINE)
+    .addRange(rangeDate)
+    .addRange(rangeMph)
+    .setPosition(2, 2, 0, 0)
+    .setOption('title', 'Average MPH Over Time')
+    .setOption('legend', {position: 'none'})
+    .setOption('vAxis', {title: 'Avg MPH'})
+    .setOption('hAxis', {title: 'Date'})
+    .build();
+    
+  sheet.insertChart(mphChart);
+  
+  const rangeSuffer = summarySheet.getRange(1, 7, lastRow, 1);
+  
+  const sufferChart = sheet.newChart()
+    .setChartType(Charts.ChartType.SCATTER)
+    .addRange(rangeMph)
+    .addRange(rangeSuffer)
+    .setPosition(2, 8, 0, 0)
+    .setOption('title', 'Speed vs. Suffer Score')
+    .setOption('hAxis', {title: 'Avg MPH'})
+    .setOption('vAxis', {title: 'Suffer Score'})
+    .setOption('legend', {position: 'none'})
+    .build();
+    
+  sheet.insertChart(sufferChart);
 }
 
 function fetchWeatherData(lat, lng, startDateLocal) {
