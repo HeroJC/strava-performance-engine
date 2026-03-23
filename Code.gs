@@ -12,6 +12,8 @@ function onOpen() {
       .addSeparator()
       .addItem('Sync Strava Data', 'syncStravaData')
       .addItem('Copy Gemini Digest', 'showGeminiDigest')
+      .addSeparator()
+      .addItem('Reset Sync History', 'resetSyncHistory')
       .addItem('Clear Credentials', 'clearCredentials')
       .addToUi();
 }
@@ -160,6 +162,11 @@ function completeAuth() {
 function clearCredentials() {
   PropertiesService.getUserProperties().deleteAllProperties();
   SpreadsheetApp.getUi().alert('Success', 'All Strava credentials have been removed from this script.', SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function resetSyncHistory() {
+  PropertiesService.getUserProperties().deleteProperty('LAST_SYNC_TIMESTAMP');
+  SpreadsheetApp.getUi().alert('History Reset', 'The sync history timestamp has been deleted. Your next sync will start fresh and pull the last 30 activities.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
 function getSettings(ss) {
