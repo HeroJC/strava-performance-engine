@@ -183,6 +183,10 @@ function syncStravaData() {
     }).getContentText());
 
     activities.forEach(activity => {
+      if (settings.targetSport && activity.sport_type !== settings.targetSport && activity.type !== settings.targetSport) {
+        return; // Skip activities that don't match the target sport
+      }
+
       const detail = JSON.parse(UrlFetchApp.fetch(`https://www.strava.com/api/v3/activities/${activity.id}`, {
         headers: { 'Authorization': `Bearer ${accessToken}` }
       }).getContentText());
