@@ -109,6 +109,35 @@ function clearCredentials() {
   SpreadsheetApp.getUi().alert('Success', 'All Strava credentials have been removed from this script.', SpreadsheetApp.getUi().ButtonSet.OK);
 }
 
+function getSettings(ss) {
+  let sheet = ss.getSheetByName('Settings');
+  if (!sheet) {
+    sheet = ss.insertSheet('Settings');
+    sheet.appendRow(['Setting', 'Value', 'Description']);
+    sheet.getRange(1, 1, 1, 3).setFontWeight("bold").setBackground("#f3f3f3");
+    sheet.appendRow(['Target Speed (MPH)', 21.0, 'Used for Velocity Maintenance and Target Gap']);
+    sheet.appendRow(['Race Distance (Miles)', 26.2, 'Used for Predicted Race Time']);
+    sheet.appendRow(['Target Sport', 'InlineSkate', 'Filter activities by this sport type']);
+    sheet.autoResizeColumns(1, 3);
+  }
+  
+  const data = sheet.getDataRange().getValues();
+  const settings = {
+    targetSpeed: 21.0,
+    raceDistance: 26.2,
+    targetSport: 'InlineSkate'
+  };
+  
+  for (let i = 1; i < data.length; i++) {
+    const key = data[i][0];
+    const val = data[i][1];
+    if (key === 'Target Speed (MPH)' && val) settings.targetSpeed = parseFloat(val);
+    if (key === 'Race Distance (Miles)' && val) settings.raceDistance = parseFloat(val);
+    if (key === 'Target Sport' && val) settings.targetSport = val.toString().trim();
+  }
+  return settings;
+}
+
 function syncStravaData() {
   const props = PropertiesService.getUserProperties();
   const clientId = props.getProperty('CLIENT_ID');
@@ -121,8 +150,9 @@ function syncStravaData() {
   }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const settings = getSettings(ss);
   
-  const summaryHeaders = ['Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Avg MPH', 'Max MPH', 'Suffer Score', 'Predicted 26.2 Time', 'Map Polyline'];
+  const summaryHeaders = ['Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Avg MPH', 'Max MPH', 'Suffer Score', 'Predicted Race Time', 'Map Polyline'];
   const segmentHeaders = [
     'Date', 'Segment Name', 'Avg MPH', 'Avg HR', 
     'Velocity Maintenance %', 'Target Gap Ratio', 'Aerobic Power (S/HR)', 'Segment ID'
@@ -165,8 +195,8 @@ function syncStravaData() {
 
       const avgMph = (detail.average_speed * 2.23694);
       
-      // Predicted 26.2 Time
-      const hours = 26.2 / avgMph;
+      // Predicted Race Time
+      const hours = settings.raceDistance / avgMph;
       const h = Math.floor(hours);
       const m = Math.floor((hours - h) * 60);
       const predictedTime = `${h}h ${m}m`;
@@ -189,8 +219,8 @@ function syncStravaData() {
           
           const hr = (effort.average_heartrate && !isNaN(effort.average_heartrate)) ? effort.average_heartrate : 0;
           
-          const velocityMaintenance = ((mph / 21.0) * 100).toFixed(1);
-          const targetGap = (mph / 21.0).toFixed(2);
+          const velocityMaintenance = ((mph / settings.targetSpeed) * 100).toFixed(1);
+          const targetGap = (mph / settings.targetSpeed).toFixed(2);
           
           const aerobicPower = hr > 0 ? (mph / hr).toFixed(3) : "N/A";
 
