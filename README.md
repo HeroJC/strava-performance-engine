@@ -40,6 +40,17 @@ To pull data from Strava, you need to create a free "API Application" on your St
 ### Step 4: Run It!
 You're done! You can now click **🏃‍♂️ Strava > Sync Strava Data** at any time to pull your latest 15 activities and their segments into the spreadsheet.
 
+### Step 5: Automatic Sync (Optional)
+If you want your data to update automatically without opening the sheet:
+1. In the Apps Script editor, click the **Triggers** icon (the alarm clock ⏰ on the left sidebar).
+2. Click **+ Add Trigger** in the bottom right.
+3. Set the following options:
+   - **Choose which function to run:** `syncStravaData`
+   - **Select event source:** `Time-driven`
+   - **Select type of time based trigger:** `Hour timer`
+   - **Select hour interval:** `Every hour`
+4. Click **Save**. Now your skating data will stay fresh even when you aren't looking at the spreadsheet!
+
 ## Privacy & Security Note
 * Your Strava API credentials are saved securely to your Google Account's hidden `PropertiesService`.
 * No one else who looks at the `Code.gs` file can see your Client ID, Secret, or Refresh Token.
