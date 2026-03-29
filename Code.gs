@@ -208,7 +208,11 @@ function syncStravaData() {
   let refreshToken = props.getProperty('REFRESH_TOKEN');
 
   if (!clientId || !clientSecret || !refreshToken) {
-    SpreadsheetApp.getUi().alert('Configuration Missing', 'Please complete the Strava setup menu first.', SpreadsheetApp.getUi().ButtonSet.OK);
+    try {
+      SpreadsheetApp.getUi().alert('Configuration Missing', 'Please complete the Strava setup menu first.', SpreadsheetApp.getUi().ButtonSet.OK);
+    } catch (e) {
+      console.error('Configuration Missing: Please complete the Strava setup menu first.');
+    }
     return;
   }
 
@@ -248,7 +252,11 @@ function syncStravaData() {
     }).getContentText());
 
     if (activities.length === 0) {
-      SpreadsheetApp.getUi().alert('Sync Complete', 'No new activities found.', SpreadsheetApp.getUi().ButtonSet.OK);
+      try {
+        SpreadsheetApp.getUi().alert('Sync Complete', 'No new activities found.', SpreadsheetApp.getUi().ButtonSet.OK);
+      } catch (e) {
+        console.log('Sync Complete: No new activities found.');
+      }
       return;
     }
 
@@ -339,7 +347,11 @@ function syncStravaData() {
     updatePRBoard(ss);
 
   } catch (e) {
-    SpreadsheetApp.getUi().alert('Sync Error', 'An error occurred during sync: ' + e.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
+    try {
+      SpreadsheetApp.getUi().alert('Sync Error', 'An error occurred during sync: ' + e.toString(), SpreadsheetApp.getUi().ButtonSet.OK);
+    } catch (err) {
+      console.error('Sync Error: ' + e.toString());
+    }
   }
 }
 

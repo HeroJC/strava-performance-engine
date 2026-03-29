@@ -51,7 +51,27 @@ If you want your data to update automatically without opening the sheet:
    - **Select hour interval:** `Every hour`
 4. Click **Save**. Now your skating data will stay fresh even when you aren't looking at the spreadsheet!
 
+---
+
+## Advanced: Developing via Terminal (using Clasp)
+
+If you'd like to push updates directly from your local terminal instead of copy-pasting code into the Google Sheets script editor, you can use `@google/clasp`.
+
+### Prerequisites
+1.  **Install Node.js:** Download it from [nodejs.org](https://nodejs.org/).
+2.  **Install Clasp:** Run `npm install -g @google/clasp` in your terminal.
+3.  **Enable Apps Script API:** Visit [script.google.com/home/settings](https://script.google.com/home/settings) and toggle "Google Apps Script API" to **ON**.
+
+### Setup Local Project
+1.  **Login:** Run `clasp login` and follow the browser instructions.
+2.  **Clone Existing Script:** 
+    - In your Google Apps Script editor, go to **Project Settings** (gear icon).
+    - Copy your **Script ID**.
+    - In your terminal, run: `clasp clone "YOUR_SCRIPT_ID"`
+3.  **Push Changes:** To deploy your local `Code.gs` to Google, run: `clasp push`
+
 ## Privacy & Security Note
 * Your Strava API credentials are saved securely to your Google Account's hidden `PropertiesService`.
 * No one else who looks at the `Code.gs` file can see your Client ID, Secret, or Refresh Token.
+* If you are using Git/Terminal, **never commit your `.clasp.json` file** as it contains your private Script ID.
 * If you want to remove the script's access, use the **🏃‍♂️ Strava > Clear Credentials** menu option, or revoke access from your Strava settings page.
