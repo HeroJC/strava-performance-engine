@@ -409,13 +409,16 @@ function updateVolumeRollup(ss) {
   const summarySheet = ss.getSheetByName('Summary_Data');
   if (!summarySheet || summarySheet.getLastRow() < 2) return;
 
-  const data = summarySheet.getRange(2, 1, summarySheet.getLastRow() - 1, 7).getValues();
+  // Fetch all columns to ensure we get Date, Dist, MPH, and Suffer
+  const lastCol = summarySheet.getLastColumn();
+  const data = summarySheet.getRange(2, 1, summarySheet.getLastRow() - 1, lastCol).getValues();
   const monthly = {};
   const weekly = {};
 
   data.forEach(row => {
-    const date = new Date(row[0]);
-    if (isNaN(date)) return;
+    // Indices: 1=Date, 4=Dist, 6=Avg MPH, 9=Suffer Score
+    const date = new Date(row[1]);
+    if (isNaN(date.getTime())) return;
 
     // Monthly Key: "YYYY-MM"
     const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
@@ -423,12 +426,13 @@ function updateVolumeRollup(ss) {
     // Weekly Key: "Week Starting YYYY-MM-DD" (Monday)
     const day = date.getDay();
     const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
-    const monday = new Date(date.setDate(diff));
+    const monday = new Date(date.getTime());
+    monday.setDate(diff);
     const weekKey = `Week Starting ${monday.getFullYear()}-${(monday.getMonth() + 1).toString().padStart(2, '0')}-${monday.getDate().toString().padStart(2, '0')}`;
 
-    const dist = parseFloat(row[3]) || 0;
-    const mph = parseFloat(row[4]) || 0;
-    const suffer = parseFloat(row[6]) || 0;
+    const dist = parseFloat(row[4]) || 0;
+    const mph = parseFloat(row[6]) || 0;
+    const suffer = parseFloat(row[9]) || 0;
 
     [monthly, weekly].forEach((group, i) => {
       const key = i === 0 ? monthKey : weekKey;
@@ -478,14 +482,19 @@ function updatePRBoard(ss) {
   const segmentSheet = ss.getSheetByName('Segment_Data');
   if (!segmentSheet || segmentSheet.getLastRow() < 2) return;
 
-  const data = segmentSheet.getRange(2, 1, segmentSheet.getLastRow() - 1, 9).getValues();
+  // Fetch all columns to ensure we get Date, Activity, Segment Name, MPH
+  const lastCol = segmentSheet.getLastColumn();
+  const data = segmentSheet.getRange(2, 1, segmentSheet.getLastRow() - 1, lastCol).getValues();
   const prs = {};
 
   data.forEach(row => {
-    const segmentName = row[2];
-    const mph = parseFloat(row[3]) || 0;
-    const date = row[0];
-    const activity = row[1];
+    // Indices: 1=Date, 2=Activity Name, 3=Segment Name, 4=Avg MPH
+    const date = row[1];
+    const activity = row[2];
+    const segmentName = row[3];
+    const mph = parseFloat(row[4]) || 0;
+
+    if (!segmentName || isNaN(mph)) return;
 
     if (!prs[segmentName]) {
       prs[segmentName] = [];
@@ -613,28 +622,36 @@ function checkAndCreateSheet(ss, name, headers) {
   return sheet;
 }
 
+function getStableDateKey(date) {
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return "INVALID";
+    return d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+  } catch (e) { return "INVALID"; }
+}
+
 function getExistingIds(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return {};
   
-  const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
-  const map = {};
+  const data = sheet.getRange(2, 1, lastRow - 1, Math.min(sheet.getLastColumn(), 5)).getValues();
+  const map = { ids: {}, legacy: {} };
   
   data.forEach((row, index) => {
+    const rowNum = index + 2;
     const firstCol = row[0] ? row[0].toString() : "";
     
-    // 1. Check if first column is already an ID (usually 10 digits)
+    // 1. Match by ID
     if (/^\d{8,12}$/.test(firstCol)) {
-      map[firstCol] = index + 2;
+      map.ids[firstCol] = rowNum;
     } 
-    // 2. Fallback: Check if first column is a Date (legacy format)
-    // We can't match strictly by ID here, so we'll store a composite key of Date+Name
-    // to help find and replace legacy rows.
+    // 2. Legacy Match (Column A is a Date)
     else if (row[0] instanceof Date || !isNaN(Date.parse(firstCol))) {
-      const dateStr = new Date(row[0]).toLocaleDateString();
-      const name = row[3] || row[2]; // Name is usually col 3 or 4
-      const compositeKey = "LEGACY_" + dateStr + "_" + name;
-      map[compositeKey] = index + 2;
+      const dateKey = getStableDateKey(row[0]);
+      // Use both Date and Distance to be sure, since Name can change
+      const dist = parseFloat(row[3]) || parseFloat(row[4]) || 0;
+      const compositeKey = dateKey + "_" + dist.toFixed(2);
+      map.legacy[compositeKey] = rowNum;
     }
   });
   return map;
@@ -642,25 +659,41 @@ function getExistingIds(sheet) {
 
 function upsertRow(sheet, id, rowData, existingIdsMap) {
   const idStr = id.toString();
-  const dateStr = rowData[1]; // Date is 2nd col in new format
-  const name = rowData[3];    // Name is 4th col in new format
-  const compositeKey = "LEGACY_" + dateStr + "_" + name;
+  const dateKey = getStableDateKey(rowData[1]);
+  const dist = parseFloat(rowData[4]) || 0;
+  const compositeKey = dateKey + "_" + dist.toFixed(2);
 
-  if (existingIdsMap[idStr]) {
-    // Perfect match by ID
-    const rowNum = existingIdsMap[idStr];
-    sheet.getRange(rowNum, 1, 1, rowData.length).setValues([rowData]);
-  } else if (existingIdsMap[compositeKey]) {
-    // Found a legacy row (Date + Name match). Overwrite it with the new ID-enabled format!
-    const rowNum = existingIdsMap[compositeKey];
-    sheet.getRange(rowNum, 1, 1, rowData.length).setValues([rowData]);
-    // Update map to use the new ID for future efficiency
-    delete existingIdsMap[compositeKey];
-    existingIdsMap[idStr] = rowNum;
+  const idRowNum = existingIdsMap.ids[idStr];
+  const legacyRowNum = existingIdsMap.legacy[compositeKey];
+
+  if (idRowNum) {
+    // We have a row with this ID. Update it.
+    sheet.getRange(idRowNum, 1, 1, rowData.length).setValues([rowData]);
+    
+    // If a legacy row also exists for this same activity, DELETE IT!
+    if (legacyRowNum && legacyRowNum !== idRowNum) {
+      sheet.deleteRow(legacyRowNum);
+      // Adjust all row numbers in our map that were below the deleted row
+      updateMapAfterDeletion(existingIdsMap, legacyRowNum);
+    }
+  } else if (legacyRowNum) {
+    // No ID row, but found a legacy row. Migrate it!
+    sheet.getRange(legacyRowNum, 1, 1, rowData.length).setValues([rowData]);
+    existingIdsMap.ids[idStr] = legacyRowNum;
+    delete existingIdsMap.legacy[compositeKey];
   } else {
-    // Truly new activity
+    // Truly new
     sheet.appendRow(rowData);
-    existingIdsMap[idStr] = sheet.getLastRow();
+    existingIdsMap.ids[idStr] = sheet.getLastRow();
+  }
+}
+
+function updateMapAfterDeletion(map, deletedRowNum) {
+  for (let id in map.ids) {
+    if (map.ids[id] > deletedRowNum) map.ids[id]--;
+  }
+  for (let key in map.legacy) {
+    if (map.legacy[key] > deletedRowNum) map.legacy[key]--;
   }
 }
 
