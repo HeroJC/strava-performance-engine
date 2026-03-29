@@ -182,6 +182,7 @@ function getSettings(ss) {
     sheet.appendRow(['Target Speed (MPH)', 21.0, 'Used for Velocity Maintenance and Target Gap']);
     sheet.appendRow(['Race Distance (Miles)', 26.2, 'Used for Predicted Race Time']);
     sheet.appendRow(['Target Sport', 'InlineSkate', 'Filter activities by this sport type']);
+    sheet.appendRow(['Athlete Age', 30, 'Used for Heart Rate Zone calculation']);
     sheet.autoResizeColumns(1, 3);
   }
   
@@ -189,7 +190,8 @@ function getSettings(ss) {
   const settings = {
     targetSpeed: 21.0,
     raceDistance: 26.2,
-    targetSport: 'InlineSkate'
+    targetSport: 'InlineSkate',
+    age: 30
   };
   
   for (let i = 1; i < data.length; i++) {
@@ -198,6 +200,7 @@ function getSettings(ss) {
     if (key === 'Target Speed (MPH)' && val) settings.targetSpeed = parseFloat(val);
     if (key === 'Race Distance (Miles)' && val) settings.raceDistance = parseFloat(val);
     if (key === 'Target Sport' && val) settings.targetSport = val.toString().trim();
+    if (key === 'Athlete Age' && val) settings.age = parseInt(val);
   }
   return settings;
 }
@@ -220,7 +223,7 @@ function syncStravaData(isBackfill = false) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const settings = getSettings(ss);
   
-  const summaryHeaders = ['Activity ID', 'Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Elev Gain (ft)', 'Avg MPH', 'Max MPH', 'Pacing Variance (MPH)', 'Suffer Score', 'Predicted Race Time', 'Temp (°F)', 'Wind (MPH)', 'Wind Dir (°)', 'Map Polyline'];
+  const summaryHeaders = ['Activity ID', 'Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Elev Gain (ft)', 'Avg MPH', 'Max MPH', 'Pacing Variance (MPH)', 'Suffer Score', 'Training Zone', 'Predicted Race Time', 'Temp (°F)', 'Wind (MPH)', 'Wind Dir (°)', 'Map Polyline'];
   const segmentHeaders = [
     'Activity ID', 'Date', 'Activity', 'Segment Name', 'Avg MPH', 'Avg HR', 
     'Velocity Maintenance %', 'Target Gap Ratio', 'Aerobic Power (S/HR)', 'Segment ID'
@@ -300,6 +303,16 @@ function syncStravaData(isBackfill = false) {
         pacingVariance = (maxSplit - minSplit).toFixed(1);
       }
 
+      // Heart Rate Zone Estimation
+      let trainingZone = "N/A";
+      if (detail.has_heartrate && detail.average_heartrate) {
+        const maxHr = 220 - settings.age;
+        const hr = detail.average_heartrate;
+        if (hr < maxHr * 0.7) trainingZone = "Zone 2 (Base)";
+        else if (hr < maxHr * 0.85) trainingZone = "Zone 3/4 (Tempo)";
+        else trainingZone = "Zone 5 (Anaerobic)";
+      }
+
       // Predicted Race Time
       const hours = settings.raceDistance / avgMph;
       const h = Math.floor(hours);
@@ -317,6 +330,7 @@ function syncStravaData(isBackfill = false) {
         (detail.max_speed * 2.23694).toFixed(1),
         pacingVariance,
         detail.suffer_score || 0,
+        trainingZone,
         predictedTime,
         weather.temp,
         weather.windSpeed,
