@@ -33,26 +33,32 @@ function showGeminiDigest() {
     return;
   }
 
-  const summaryData = summarySheet.getRange(2, 1, Math.min(5, summarySheet.getLastRow() - 1), 11).getValues();
+  // Get headers and the last 5 activities
+  const summaryHeaders = summarySheet.getRange(1, 1, 1, summarySheet.getLastColumn()).getValues()[0];
+  const summaryData = summarySheet.getRange(Math.max(2, summarySheet.getLastRow() - 4), 1, Math.min(5, summarySheet.getLastRow() - 1), summarySheet.getLastColumn()).getValues();
   
-  let digest = "## 🏃‍♂️ Strava Performance Digest (Last 5 Skates)\n\n";
+  let digest = "Act as an elite inline speed skating coach. I am training for a 26.2-mile marathon. ";
+  digest += "Analyze my recent performance data below. Look for trends in my aerobic power (MPH/HR), pacing consistency, and how I handle elevation and weather. ";
+  digest += "Provide 3 actionable tips for my next training block.\n\n";
+  digest += "## 🏃‍♂️ Recent Activity Data\n\n";
   
   summaryData.forEach(row => {
-    digest += `### ${row[0]}: ${row[2]}\n`;
-    digest += `- **Stats:** ${row[3]} mi @ ${row[4]} Avg MPH (Max: ${row[5]} MPH)\n`;
-    digest += `- **Conditions:** ${row[8]}°F, Wind ${row[9]} MPH at ${row[10]}°\n`;
-    digest += `- **Effort:** Suffer Score ${row[6]}, Predicted Marathon: ${row[7]}\n\n`;
+    digest += `### Activity: ${row[3]} (${row[1]})\n`;
+    digest += `- **Distance:** ${row[4]} mi | **Elev Gain:** ${row[5]} ft\n`;
+    digest += `- **Speed:** Avg ${row[6]} MPH (Max ${row[7]}) | **Variance:** ${row[8]} MPH\n`;
+    digest += `- **Effort:** Suffer Score ${row[9]} | **Zone:** ${row[10]}\n`;
+    digest += `- **Weather:** ${row[12]}°F, Wind ${row[13]} MPH\n\n`;
   });
 
   if (segmentSheet && segmentSheet.getLastRow() > 1) {
-    const segmentData = segmentSheet.getRange(2, 1, Math.min(10, segmentSheet.getLastRow() - 1), 7).getValues();
+    const segmentData = segmentSheet.getRange(Math.max(2, segmentSheet.getLastRow() - 9), 1, Math.min(10, segmentSheet.getLastRow() - 1), 9).getValues();
     digest += "## 📈 Recent Segment Highlights\n";
-    segmentData.slice(0, 5).forEach(seg => {
-      digest += `- **${seg[1]}**: ${seg[2]} MPH (${seg[4]} Velocity Maint.)\n`;
+    segmentData.forEach(seg => {
+      digest += `- **${seg[3]}**: ${seg[4]} MPH | Maintenance: ${seg[6]} | Power: ${seg[8]}\n`;
     });
   }
 
-  digest += "\n---\n*Copy and paste this into Gemini for a deep-dive analysis.*";
+  digest += "\n---\n*Copy and paste this into Gemini for your coaching session.*";
 
   const htmlOutput = HtmlService
     .createHtmlOutput(`<div style="font-family: Arial, sans-serif;">
