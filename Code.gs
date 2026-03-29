@@ -18,6 +18,7 @@ function onOpen() {
       .addItem('Refresh PR Board', 'updatePRBoard')
       .addSeparator()
       .addItem('Reset Sync History', 'resetSyncHistory')
+      .addItem('Clean Legacy Data', 'cleanLegacyData')
       .addItem('Clear Credentials', 'clearCredentials')
       .addToUi();
 }
@@ -723,5 +724,41 @@ function backfillMissingData() {
     if (originalSyncTimestamp) {
       props.setProperty('LAST_SYNC_TIMESTAMP', originalSyncTimestamp);
     }
+  }
+}
+
+function cleanLegacyData() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert('Clean Legacy Data', 'This will delete all old rows that do not have an Activity ID in the first column. You must run "Backfill Missing Data" afterwards to restore them. Continue?', ui.ButtonSet.YES_NO);
+  
+  if (response !== ui.Button.YES) return;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetsToClean = ['Summary_Data', 'Segment_Data'];
+  let deletedCount = 0;
+
+  sheetsToClean.forEach(sheetName => {
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() < 2) return;
+
+    const data = sheet.getDataRange().getValues();
+    // Loop backwards so deleting rows doesn't mess up our indices
+    for (let i = data.length - 1; i >= 1; i--) {
+      const firstCol = data[i][0] ? data[i][0].toString().trim() : "";
+      // If it's not a valid ID (8+ digits), delete the row
+      if (!/^\d{8,12}$/.test(firstCol)) {
+        sheet.deleteRow(i + 1);
+        deletedCount++;
+      }
+    }
+  });
+
+  if (deletedCount > 0) {
+    // Also trigger rollups to clean up the bad data from dashboards
+    updateVolumeRollup(ss);
+    updatePRBoard(ss);
+    ui.alert('Success', `Deleted ${deletedCount} misaligned legacy rows. Please run "Backfill Missing Data" now to restore them properly.`, ui.ButtonSet.OK);
+  } else {
+    ui.alert('Complete', 'No legacy rows found. Your data is perfectly formatted!', ui.ButtonSet.OK);
   }
 }
