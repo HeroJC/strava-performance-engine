@@ -347,9 +347,14 @@ function syncStravaData(isBackfill = false) {
       upsertRow(summarySheet, detail.id, summaryRow, existingSummaryIds);
 
       if (detail.segment_efforts) {
-        // If backfilling, we might want to avoid duplicate segments. 
-        // For simplicity, we'll only append new segments if they aren't already there for this activity.
-        // A full segment sync/upsert would require more complex mapping.
+        // If backfilling, we must avoid duplicate segments for this activity.
+        // We will remove any rows in Segment_Data that match this Activity ID before appending.
+        const segmentData = segmentSheet.getDataRange().getValues();
+        for (let i = segmentData.length - 1; i >= 1; i--) {
+          if (segmentData[i][0].toString() === detail.id.toString()) {
+            segmentSheet.deleteRow(i + 1);
+          }
+        }
         
         detail.segment_efforts.forEach(effort => {
           // Calculate MPH with fallback if average_speed is missing
@@ -611,20 +616,49 @@ function checkAndCreateSheet(ss, name, headers) {
 function getExistingIds(sheet) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return {};
-  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  
+  const data = sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).getValues();
   const map = {};
-  ids.forEach((row, index) => {
-    if (row[0]) map[row[0].toString()] = index + 2; // Row number
+  
+  data.forEach((row, index) => {
+    const firstCol = row[0] ? row[0].toString() : "";
+    
+    // 1. Check if first column is already an ID (usually 10 digits)
+    if (/^\d{8,12}$/.test(firstCol)) {
+      map[firstCol] = index + 2;
+    } 
+    // 2. Fallback: Check if first column is a Date (legacy format)
+    // We can't match strictly by ID here, so we'll store a composite key of Date+Name
+    // to help find and replace legacy rows.
+    else if (row[0] instanceof Date || !isNaN(Date.parse(firstCol))) {
+      const dateStr = new Date(row[0]).toLocaleDateString();
+      const name = row[3] || row[2]; // Name is usually col 3 or 4
+      const compositeKey = "LEGACY_" + dateStr + "_" + name;
+      map[compositeKey] = index + 2;
+    }
   });
   return map;
 }
 
 function upsertRow(sheet, id, rowData, existingIdsMap) {
   const idStr = id.toString();
+  const dateStr = rowData[1]; // Date is 2nd col in new format
+  const name = rowData[3];    // Name is 4th col in new format
+  const compositeKey = "LEGACY_" + dateStr + "_" + name;
+
   if (existingIdsMap[idStr]) {
+    // Perfect match by ID
     const rowNum = existingIdsMap[idStr];
     sheet.getRange(rowNum, 1, 1, rowData.length).setValues([rowData]);
+  } else if (existingIdsMap[compositeKey]) {
+    // Found a legacy row (Date + Name match). Overwrite it with the new ID-enabled format!
+    const rowNum = existingIdsMap[compositeKey];
+    sheet.getRange(rowNum, 1, 1, rowData.length).setValues([rowData]);
+    // Update map to use the new ID for future efficiency
+    delete existingIdsMap[compositeKey];
+    existingIdsMap[idStr] = rowNum;
   } else {
+    // Truly new activity
     sheet.appendRow(rowData);
     existingIdsMap[idStr] = sheet.getLastRow();
   }
@@ -632,9 +666,16 @@ function upsertRow(sheet, id, rowData, existingIdsMap) {
 
 function backfillMissingData() {
   const ui = SpreadsheetApp.getUi();
-  const response = ui.alert('Backfill Missing Data', 'This will re-sync your last 50 activities to fill in any missing or new columns. It may take a minute. Continue?', ui.ButtonSet.YES_NO);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const segmentSheet = ss.getSheetByName('Segment_Data');
+  
+  const response = ui.alert('Backfill Missing Data', 'This will re-sync your last 50 activities to fill in any missing or new columns. It will also clear and re-populate segment data for these activities to prevent duplicates. Continue?', ui.ButtonSet.YES_NO);
   
   if (response !== ui.Button.YES) return;
+
+  // Optional: If you want to be extra safe, you could clear segments here, 
+  // but syncStravaData doesn't know which activities it's about to get until it calls the API.
+  // We'll handle segment deduplication inside syncStravaData by checking IDs.
   
   // Temporarily clear the sync history for this run
   const props = PropertiesService.getUserProperties();
@@ -643,7 +684,7 @@ function backfillMissingData() {
   
   try {
     syncStravaData(true); // Special flag for backfill
-    ui.alert('Backfill Complete', 'Successfully re-synced recent activities.', ui.ButtonSet.OK);
+    ui.alert('Backfill Complete', 'Successfully re-synced recent activities. Old misformatted rows have been updated with IDs.', ui.ButtonSet.OK);
   } finally {
     // Restore the sync history
     if (originalSyncTimestamp) {
