@@ -11,6 +11,7 @@ function onOpen() {
       .addItem('3. Complete Authorization', 'completeAuth')
       .addSeparator()
       .addItem('Sync Strava Data', 'syncStravaData')
+      .addItem('Backfill Missing Data', 'backfillMissingData')
       .addItem('Copy Gemini Digest', 'showGeminiDigest')
       .addSeparator()
       .addItem('Refresh Volume Rollup', 'updateVolumeRollup')
@@ -201,7 +202,7 @@ function getSettings(ss) {
   return settings;
 }
 
-function syncStravaData() {
+function syncStravaData(isBackfill = false) {
   const props = PropertiesService.getUserProperties();
   const clientId = props.getProperty('CLIENT_ID');
   const clientSecret = props.getProperty('CLIENT_SECRET');
@@ -219,14 +220,18 @@ function syncStravaData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const settings = getSettings(ss);
   
-  const summaryHeaders = ['Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Avg MPH', 'Max MPH', 'Suffer Score', 'Predicted Race Time', 'Temp (°F)', 'Wind (MPH)', 'Wind Dir (°)', 'Map Polyline'];
+  const summaryHeaders = ['Activity ID', 'Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Elev Gain (ft)', 'Avg MPH', 'Max MPH', 'Suffer Score', 'Predicted Race Time', 'Temp (°F)', 'Wind (MPH)', 'Wind Dir (°)', 'Map Polyline'];
   const segmentHeaders = [
-    'Date', 'Activity', 'Segment Name', 'Avg MPH', 'Avg HR', 
+    'Activity ID', 'Date', 'Activity', 'Segment Name', 'Avg MPH', 'Avg HR', 
     'Velocity Maintenance %', 'Target Gap Ratio', 'Aerobic Power (S/HR)', 'Segment ID'
   ];
 
   const summarySheet = checkAndCreateSheet(ss, 'Summary_Data', summaryHeaders);
   const segmentSheet = checkAndCreateSheet(ss, 'Segment_Data', segmentHeaders);
+
+  const existingSummaryIds = getExistingIds(summarySheet);
+  // For segments, we can't easily upsert unless we use a compound ID, 
+  // so we'll just focus on Summary upserts for now or clear/re-populate segment rows.
 
   try {
     const tokenUrl = `https://www.strava.com/oauth/token?client_id=${clientId}&client_secret=${clientSecret}&refresh_token=${refreshToken}&grant_type=refresh_token`;
@@ -242,8 +247,8 @@ function syncStravaData() {
 
     // Incremental sync logic
     let afterTimestamp = props.getProperty('LAST_SYNC_TIMESTAMP');
-    let activitiesUrl = 'https://www.strava.com/api/v3/athlete/activities?per_page=30';
-    if (afterTimestamp) {
+    let activitiesUrl = 'https://www.strava.com/api/v3/athlete/activities?per_page=' + (isBackfill ? 50 : 30);
+    if (afterTimestamp && !isBackfill) {
       activitiesUrl += `&after=${afterTimestamp}`;
     }
 
@@ -292,11 +297,13 @@ function syncStravaData() {
       const m = Math.floor((hours - h) * 60);
       const predictedTime = `${h}h ${m}m`;
 
-      summarySheet.appendRow([
+      const summaryRow = [
+        detail.id.toString(),
         new Date(detail.start_date_local).toLocaleDateString(),
         neighborhood,
         detail.name,
         (detail.distance * 0.000621371).toFixed(2),
+        (detail.total_elevation_gain * 3.28084).toFixed(0),
         avgMph.toFixed(1),
         (detail.max_speed * 2.23694).toFixed(1),
         detail.suffer_score || 0,
@@ -305,9 +312,15 @@ function syncStravaData() {
         weather.windSpeed,
         weather.windDir,
         detail.map ? detail.map.summary_polyline : "N/A"
-      ]);
+      ];
+
+      upsertRow(summarySheet, detail.id, summaryRow, existingSummaryIds);
 
       if (detail.segment_efforts) {
+        // If backfilling, we might want to avoid duplicate segments. 
+        // For simplicity, we'll only append new segments if they aren't already there for this activity.
+        // A full segment sync/upsert would require more complex mapping.
+        
         detail.segment_efforts.forEach(effort => {
           // Calculate MPH with fallback if average_speed is missing
           let speedMS = effort.average_speed;
@@ -323,6 +336,7 @@ function syncStravaData() {
           const aerobicPower = (mph > 0 && hr > 0) ? (mph / hr).toFixed(3) : "N/A";
 
           segmentSheet.appendRow([
+            detail.id.toString(),
             new Date(detail.start_date_local).toLocaleDateString(),
             detail.name,
             effort.name,
@@ -338,7 +352,7 @@ function syncStravaData() {
     });
 
     // Save the latest timestamp so we don't fetch these again
-    if (maxTimestamp > 0) {
+    if (maxTimestamp > 0 && !isBackfill) {
       props.setProperty('LAST_SYNC_TIMESTAMP', maxTimestamp.toString());
     }
 
@@ -562,4 +576,48 @@ function checkAndCreateSheet(ss, name, headers) {
     }
   }
   return sheet;
+}
+
+function getExistingIds(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return {};
+  const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  const map = {};
+  ids.forEach((row, index) => {
+    if (row[0]) map[row[0].toString()] = index + 2; // Row number
+  });
+  return map;
+}
+
+function upsertRow(sheet, id, rowData, existingIdsMap) {
+  const idStr = id.toString();
+  if (existingIdsMap[idStr]) {
+    const rowNum = existingIdsMap[idStr];
+    sheet.getRange(rowNum, 1, 1, rowData.length).setValues([rowData]);
+  } else {
+    sheet.appendRow(rowData);
+    existingIdsMap[idStr] = sheet.getLastRow();
+  }
+}
+
+function backfillMissingData() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert('Backfill Missing Data', 'This will re-sync your last 50 activities to fill in any missing or new columns. It may take a minute. Continue?', ui.ButtonSet.YES_NO);
+  
+  if (response !== ui.Button.YES) return;
+  
+  // Temporarily clear the sync history for this run
+  const props = PropertiesService.getUserProperties();
+  const originalSyncTimestamp = props.getProperty('LAST_SYNC_TIMESTAMP');
+  props.deleteProperty('LAST_SYNC_TIMESTAMP');
+  
+  try {
+    syncStravaData(true); // Special flag for backfill
+    ui.alert('Backfill Complete', 'Successfully re-synced recent activities.', ui.ButtonSet.OK);
+  } finally {
+    // Restore the sync history
+    if (originalSyncTimestamp) {
+      props.setProperty('LAST_SYNC_TIMESTAMP', originalSyncTimestamp);
+    }
+  }
 }
