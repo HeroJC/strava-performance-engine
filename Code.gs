@@ -220,7 +220,7 @@ function syncStravaData(isBackfill = false) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const settings = getSettings(ss);
   
-  const summaryHeaders = ['Activity ID', 'Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Elev Gain (ft)', 'Avg MPH', 'Max MPH', 'Suffer Score', 'Predicted Race Time', 'Temp (°F)', 'Wind (MPH)', 'Wind Dir (°)', 'Map Polyline'];
+  const summaryHeaders = ['Activity ID', 'Date', 'Neighborhood', 'Name', 'Dist (mi)', 'Elev Gain (ft)', 'Avg MPH', 'Max MPH', 'Pacing Variance (MPH)', 'Suffer Score', 'Predicted Race Time', 'Temp (°F)', 'Wind (MPH)', 'Wind Dir (°)', 'Map Polyline'];
   const segmentHeaders = [
     'Activity ID', 'Date', 'Activity', 'Segment Name', 'Avg MPH', 'Avg HR', 
     'Velocity Maintenance %', 'Target Gap Ratio', 'Aerobic Power (S/HR)', 'Segment ID'
@@ -291,6 +291,15 @@ function syncStravaData(isBackfill = false) {
 
       const avgMph = (detail.average_speed * 2.23694);
       
+      // Pacing Variance (MPH difference between fastest and slowest mile split)
+      let pacingVariance = "N/A";
+      if (detail.splits_standard && detail.splits_standard.length > 1) {
+        const splitSpeeds = detail.splits_standard.map(s => (s.distance / s.elapsed_time) * 2.23694);
+        const maxSplit = Math.max(...splitSpeeds);
+        const minSplit = Math.min(...splitSpeeds);
+        pacingVariance = (maxSplit - minSplit).toFixed(1);
+      }
+
       // Predicted Race Time
       const hours = settings.raceDistance / avgMph;
       const h = Math.floor(hours);
@@ -306,6 +315,7 @@ function syncStravaData(isBackfill = false) {
         (detail.total_elevation_gain * 3.28084).toFixed(0),
         avgMph.toFixed(1),
         (detail.max_speed * 2.23694).toFixed(1),
+        pacingVariance,
         detail.suffer_score || 0,
         predictedTime,
         weather.temp,
